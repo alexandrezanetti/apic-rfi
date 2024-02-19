@@ -1,0 +1,78 @@
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:wsoap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:http="http://schemas.xmlsoap.org/wsdl/http/" xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/" xmlns:tns="urn:sap-com:document:sap:rfc:functions" targetNamespace="urn:sap-com:document:sap:rfc:functions">
+  <wsdl:documentation>
+    <sidl:sidl xmlns:sidl="http://www.sap.com/2007/03/sidl"/>
+  </wsdl:documentation>
+  <wsdl:types>
+    <xsd:schema attributeFormDefault="qualified" targetNamespace="urn:sap-com:document:sap:rfc:functions">
+      <xsd:complexType name="SampleMessage">
+        <xsd:sequence>
+          <xsd:element type="xsd:string" name="document" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:complexType name="SampleMessageResponse">
+        <xsd:sequence>
+          <xsd:element type="xsd:string" name="returnMessage" minOccurs="0"/>
+          <xsd:element type="xsd:string" name="returnCode" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:element name="MT_SampleMessage">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="SampleMessage" type="tns:SampleMessage" minOccurs="0" maxOccurs="1"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="MT_SampleMessageResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="SampleMessageResponse" type="tns:SampleMessageResponse" minOccurs="0" maxOccurs="1"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="MT_SampleMessage">
+    <wsdl:part name="parameters" element="tns:MT_SampleMessage"/>
+  </wsdl:message>
+  <wsdl:message name="MT_SampleMessageResponse">
+    <wsdl:part name="parameter" element="tns:MT_SampleMessageResponse"/>
+  </wsdl:message>
+  <wsdl:portType name="WSPort">
+    <wsdl:operation name="Query">
+      <wsdl:input message="tns:MT_SampleMessage"/>
+      <wsdl:output message="tns:MT_SampleMessageResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="SampleBinding" type="tns:WSPort">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+    <wsdl:operation name="Query">
+      <soap:operation soapAction="urn:sap-com:document:sap:rfc:functions:WSPort:QueryRequest" style="document"/>
+      <wsdl:input>
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="SampleBinding_soap12" type="tns:WSPort">
+    <wsoap12:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+    <wsdl:operation name="Query">
+      <wsoap12:operation soapAction="urn:sap-com:document:sap:rfc:functions:WSPort:QueryRequest" style="document"/>
+      <wsdl:input>
+        <wsoap12:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <wsoap12:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="SampleBinding">
+    <wsdl:port name="SampleBinding" binding="tns:SampleBinding">
+      <soap:address location="http://dummy.com:80/dummy"/>
+    </wsdl:port>
+    <wsdl:port name="SampleBinding_soap12" binding="tns:SampleBinding_soap12">
+      <wsoap12:address location="http://dummy.com:80/dummy"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
