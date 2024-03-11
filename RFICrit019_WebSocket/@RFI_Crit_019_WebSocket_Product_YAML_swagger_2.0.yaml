@@ -1,0 +1,58 @@
+info:
+  version: 1.0.0
+  title: test-yahel-websocket-product
+  name: test-yahel-websocket-product
+gateways:
+  - datapower-api-gateway
+plans:
+  default-plan:
+    title: Default Plan
+    description: Default Plan
+    rate-limits:
+      default:
+        value: 100/1hour
+        hard-limit: false
+    assembly-rate-limits:
+      websocket-request-ratelimit:
+        - value: 3/1minute
+          cache-only: true
+          is-client: true
+          use-api-name: false
+          use-app-id: false
+          use-client-id: false
+          hard-limit: true
+      websocket-response-ratelimit:
+        - value: 5/1minute
+          cache-only: true
+          is-client: true
+          use-api-name: false
+          use-app-id: false
+          use-client-id: false
+          hard-limit: true
+    assembly-count-limits:
+      websocket-connections:
+        - hard-limit: true
+          cache-only: true
+          is-client: true
+          use-api-name: false
+          use-app-id: false
+          use-client-id: false
+          auto-decrement: true
+          value: 2
+    apis:
+      test-yahel-websocket-api1.0.0: {}
+apis:
+  test-yahel-websocket-api1.0.0:
+    $ref: test-yahel-websocket-api_1.0.0.yaml
+visibility:
+  view:
+    type: public
+    orgs: []
+    tags: []
+    enabled: true
+  subscribe:
+    type: authenticated
+    orgs: []
+    tags: []
+    enabled: true
+product: 1.0.0

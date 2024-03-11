@@ -1,0 +1,90 @@
+openapi: 3.0.0
+info:
+  version: 0.0.1
+  title: RFICrit011-zzz-ace-rfi
+  x-ibm-name: RFICrit011-zzz-ace-rfi
+components:
+  schemas:
+    acerfi:
+      type: object
+      properties:
+        status:
+          type: string
+        chave:
+          type: string
+        propquery1:
+          type: string
+        propquery2:
+          type: string
+      additionalProperties: false
+      description: ' '
+paths:
+  /acerfi/teste:
+    get:
+      tags:
+        - acerfi
+      summary: teste
+      operationId: acerfi.teste
+      parameters:
+        - name: query1
+          in: query
+          description: acerfi query1
+          schema:
+            type: string
+          required: false
+        - name: query2
+          in: query
+          description: acerfi query2
+          schema:
+            type: string
+          required: false
+        - name: id
+          in: query
+          description: acerfi id
+          schema:
+            type: string
+          required: false
+      responses:
+        '200':
+          description: Request was successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/acerfi'
+x-ibm-configuration:
+  gateway: datapower-api-gateway
+  type: rest
+  phase: realized
+  enforced: true
+  testable: true
+  cors:
+    enabled: true
+  assembly:
+    execute:
+      - invoke:
+          title: Invoke flow
+          version: 2.0.0
+          verb: keep
+          target-url: $(app-connect-designer-url)$(request.path)
+          follow-redirects: false
+          timeout: 60
+          parameter-control:
+            type: blocklist
+          header-control:
+            type: blocklist
+          inject-proxy-headers: true
+          username: $(app-connect-designer-username)
+          password: $(app-connect-designer-password)
+  properties:
+    app-connect-designer-url:
+      description: The URL of the App Connect Designer API endpoint.
+      encoded: false
+      value: https://ace-designer-demo-designer-https-cp4i.apps.ocp-zzz-v-1.cp.fyre.ibm.com
+    app-connect-designer-username:
+      description: The username required for basic authentication to the App Connect Designer API endpoint.
+      value: p7bs2qdI
+    app-connect-designer-password:
+      description: The password required for basic authentication to the App Connect Designer API endpoint.
+      value: Hf4ZEk6G75RUgaQyhSAF1LirnXv9l8e2
+servers:
+  - url: https://ace-designer-demo-designer-https-cp4i.apps.ocp-zzz-v-1.cp.fyre.ibm.com/zzz-ace-rfi

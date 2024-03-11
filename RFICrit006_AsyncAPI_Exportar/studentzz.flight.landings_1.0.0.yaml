@@ -1,0 +1,67 @@
+asyncapi: 2.1.0
+info:
+  title: STUDENTZZ.FLIGHT.LANDINGS
+  version: 1.0.0
+  x-ibm-name: studentzz.flight.landings
+  contact:
+    email: notprovided@email.com
+channels:
+  STUDENTZZ.FLIGHT.LANDINGS:
+    bindings:
+      kafka:
+        partitions: 1
+        replicas: 3
+    subscribe:
+      message:
+        payload:
+          type: record
+          namespace: flightlandings
+          name: flightlandings
+          fields:
+            - name: timestamp
+              type: string
+            - name: location
+              type: string
+            - name: airport
+              type: string
+            - name: airline
+              type: string
+            - name: flight
+              type: string
+            - name: terminal
+              type: string
+            - name: gate
+              type: int
+            - name: passengers
+              type: int
+        schemaFormat: application/vnd.apache.avro;version=1.9.0
+        description: Flignt landings schema
+servers:
+  cluster:
+    url: $(bootstrapServerAddress)
+    protocol: kafka-secure
+    security:
+      - X-IBM-Client-Id: []
+components:
+  securitySchemes:
+    X-IBM-Client-Id:
+      type: plain
+x-ibm-configuration:
+  enforced: true
+  phase: realized
+  assembly:
+    execute:
+      - invoke-kafka:
+          title: invoke-kafka
+          version: 1.0.0
+          bootstrap.servers: $(bootstrapServerAddress)
+          clusterconfigid: 88cc927b-4b55-45f8-8f18-a6a6f2b8e5f8
+  properties:
+    bootstrapServerAddress:
+      value: handled.by.eem
+  type: asyncapi
+  testable: false
+  x-ibm-eem: 6ed78690-f7f5-4205-871b-9b3eda662b71
+  cors:
+    enabled: false
+  gateway: event-gateway

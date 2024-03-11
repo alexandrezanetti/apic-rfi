@@ -1,0 +1,111 @@
+swagger: '2.0'
+info:
+  title: RFICRIT041New
+  x-ibm-name: rficrit041new
+  version: 1.0.0
+x-ibm-configuration:
+  cors:
+    enabled: true
+  gateway: datapower-api-gateway
+  type: rest
+  phase: realized
+  enforced: true
+  testable: true
+  assembly:
+    execute:
+      - operation-switch:
+          version: 2.0.0
+          title: operation-switch
+          case:
+            - operations:
+                - verb: get
+                  path: /pokemon/{name}
+              execute:
+                - invoke:
+                    title: invoke
+                    version: 2.0.0
+                    verb: GET
+                    target-url: $(target-url)$(request.parameters.name)
+                    follow-redirects: false
+                    timeout: 60
+                    parameter-control:
+                      type: allowlist
+                      values: []
+                    header-control:
+                      type: blocklist
+                      values: []
+                    inject-proxy-headers: true
+                    persistent-connection: true
+                    cache-response: time-to-live
+                    cache-ttl: 3599
+                    cache-key: cachekeystore
+            - operations:
+                - verb: get
+                  path: /number
+              execute:
+                - invoke:
+                    title: invoke
+                    version: 2.0.0
+                    verb: GET
+                    target-url: >-
+                      http://www.randomnumberapi.com/api/v1.0/random?min=100&max=1000&count=4
+                    follow-redirects: false
+                    timeout: 60
+                    parameter-control:
+                      type: allowlist
+                      values: []
+                    header-control:
+                      type: blocklist
+                      values: []
+                    inject-proxy-headers: true
+                    persistent-connection: true
+                    cache-response: time-to-live
+                    cache-ttl: 70
+                    cache-key: cachekeystore
+          otherwise: []
+    finally: []
+  properties:
+    target-url:
+      value: https://pokeapi.co/api/v2/pokemon/
+      description: The URL of the target service
+      encoded: false
+  activity-log:
+    enabled: true
+    success-content: activity
+    error-content: payload
+basePath: /rficrit041new
+paths:
+  /pokemon/{name}:
+    get:
+      responses:
+        '200':
+          description: success
+          schema:
+            type: string
+      consumes: []
+      produces: []
+    parameters:
+      - name: name
+        in: path
+        required: true
+        type: string
+      - name: cache
+        in: header
+        type: boolean
+        required: true
+  /number:
+    get:
+      responses:
+        '200':
+          description: success
+          schema:
+            type: string
+securityDefinitions:
+  clientID:
+    type: apiKey
+    in: header
+    name: X-IBM-Client-Id
+security:
+  - clientID: []
+schemes:
+  - https

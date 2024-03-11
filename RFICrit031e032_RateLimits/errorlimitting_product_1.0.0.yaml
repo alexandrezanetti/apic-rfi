@@ -1,0 +1,39 @@
+info:
+  version: 1.0.0
+  title: ErrorLimitting_Product_Burst
+  name: errorlimitting_product
+gateways:
+  - datapower-api-gateway
+plans:
+  default-plan:
+    title: Default Plan
+    description: |-
+      Rate 100 trans/hour
+      Burst Limit 3 trans/min
+    rate-limits:
+      RateLimit:
+        value: 100/1hour
+        hard-limit: false
+    burst-limits:
+      BurstLimit:
+        value: 3/1minute
+    apis:
+      api-pokemon-dev1.0.0: {}
+      errorlimitting1.0.0: {}
+apis:
+  api-pokemon-dev1.0.0:
+    $ref: api-pokemon-dev_1.0.0.yaml
+  errorlimitting1.0.0:
+    $ref: errorlimitting_1.0.0.yaml
+visibility:
+  view:
+    type: public
+    orgs: []
+    tags: []
+    enabled: true
+  subscribe:
+    type: authenticated
+    orgs: []
+    tags: []
+    enabled: true
+product: 1.0.0

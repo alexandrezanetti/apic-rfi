@@ -1,0 +1,145 @@
+swagger: '2.0'
+info:
+  title: RFICrit060
+  version: 1.0.0
+  description: ''
+  x-ibm-name: rficrit060
+paths:
+  /workshop/sample:
+    get:
+      operationId: getWorkshopSample
+      responses:
+        '200':
+          description: Sucesso.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/mensagemSample'
+      produces:
+        - application/json
+      description: Lista informacoes workshop sample
+    post:
+      operationId: postWorkshopSample
+      responses:
+        '200':
+          description: Sucesso.
+          schema:
+            $ref: '#/definitions/bodyrequest'
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      description: Inserir informacoes workshop sample
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: '#/definitions/bodyrequest'
+          description: Insere informacoes workshop sample
+          required: true
+basePath: /rficirt013
+definitions:
+  bodyrequest:
+    type: object
+    properties:
+      idJson:
+        type: string
+        format: number
+      operacao:
+        type: string
+        format: Incl, excl, atua
+      status:
+        type: string
+        format: proc, erro, nao proc
+      conteudoJson:
+        type: object
+  mensagemSample:
+    type: object
+    properties:
+      id:
+        type: number
+      nome:
+        type: string
+      descricao:
+        type: string
+      flag:
+        type: string
+        format: S/N
+x-ibm-configuration:
+  cors:
+    enabled: true
+  properties:
+    target-url:
+      value: https://pokeapi.co/api/v2/pokemon/ditto
+      description: The URL of the target service
+      encoded: false
+  phase: realized
+  enforced: true
+  gateway: datapower-api-gateway
+  assembly:
+    execute:
+      - switch:
+          version: 2.0.0
+          title: switch
+          case:
+            - condition: $header("filtro")="true"
+              execute:
+                - map:
+                    version: 2.0.0
+                    title: map
+                    inputs: {}
+                    outputs:
+                      output:
+                        schema:
+                          type: object
+                          properties:
+                            return:
+                              type: string
+                              name: return
+                        variable: message.body
+                        content: application/json
+                    actions:
+                      - set: output.return
+                        default: filtro informado
+            - otherwise:
+                - map:
+                    version: 2.0.0
+                    title: map
+                    inputs: {}
+                    outputs:
+                      output:
+                        schema:
+                          type: object
+                          properties:
+                            return:
+                              type: string
+                              name: return
+                        variable: message.body
+                        content: application/json
+                    actions:
+                      - set: output.return
+                        default: filtro não informado
+    finally: []
+    catch: []
+  type: rest
+  testable: true
+  activity-log:
+    enabled: true
+    success-content: activity
+    error-content: payload
+  application-authentication-source:
+    - header
+securityDefinitions:
+  clientID:
+    type: apiKey
+    in: header
+    name: X-IBM-Client-Id
+security:
+  - clientID: []
+host: $(catalog.host)
+schemes:
+  - https
+produces:
+  - application/json
+consumes:
+  - application/json

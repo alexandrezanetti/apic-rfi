@@ -1,0 +1,588 @@
+swagger: '2.0'
+info:
+  title: RFICrit017
+  x-ibm-name: rficrit017
+  version: 1.0.0
+schemes:
+  - https
+  - wss
+basePath: /rficrit017
+x-ibm-configuration:
+  graphql-schema: '#/definitions/spacex-production.up.railway.app'
+  type: graphql
+  cors:
+    enabled: true
+  assembly:
+    execute:
+      - switch:
+          version: 2.0.0
+          title: switch
+          description: ''
+          case:
+            - condition: >-
+                (($operationPath() = '/graphql') and ($httpVerb() = 'GET') and
+                (request.websocket = true))
+              execute:
+                - ratelimit:
+                    version: 2.4.0
+                    title: ratelimit websocket
+                    description: GraphQL Websocket limit
+                    count-limit:
+                      - name: graphql-subscription-websocket
+                        operation: inc
+                    source: plan-named
+                - switch:
+                    version: 2.0.0
+                    title: switch
+                    case:
+                      - condition: ($exists($urlParameter('query')))
+                        execute:
+                          - parse:
+                              version: 2.0.0
+                              title: parse
+                              parse-settings-reference:
+                                parse-settings:
+                                  document_type: graphql
+                                  max_nesting_depth: 10
+                              description: Parse the GraphQL query
+                          - validate:
+                              version: 2.7.0
+                              title: validate & analyze
+                              input: message
+                              validate-against: graphql
+                              description: >-
+                                Validate the GraphQL query and analyze the
+                                expected cost
+                          - ratelimit:
+                              version: 2.4.0
+                              title: ratelimit concurrent
+                              description: GraphQL Subscription limit
+                              source: plan-named
+                              count-limit:
+                                - name: graphql-subscription-type-cost
+                                  operation: inc
+                                - name: graphql-subscription-field-cost
+                                  operation: inc
+                      - otherwise: []
+                - websocket-upgrade:
+                    version: 2.0.0
+                    title: websocket-upgrade
+                    header-control:
+                      type: blocklist
+                      values: []
+                    parameter-control:
+                      type: allowlist
+                      values: []
+                    timeout: 60
+                    description: >-
+                      establish the websocket connection to the backend GraphQL
+                      server
+                    target-url: https://spacex-production.up.railway.app/
+                    request-assembly:
+                      execute:
+                        - parse:
+                            version: 2.0.0
+                            title: parse
+                            parse-settings-reference:
+                              parse-settings:
+                                document_type: detect
+                                max_nesting_depth: 10
+                            description: Parse the GraphQL query
+                        - switch:
+                            version: 2.0.0
+                            title: switch
+                            description: ''
+                            case:
+                              - condition: >-
+                                  ($storageType() = "json" and
+                                  $exists(message.body.payload) and
+                                  message.body.payload != null and
+                                  $string(message.body.payload) != '{}')
+                                execute:
+                                  - set-variable:
+                                      version: 2.0.0
+                                      title: backup payload
+                                      actions:
+                                        - set: websocket-backup
+                                          value: $(message.body)
+                                          type: any
+                                        - set: message.body
+                                          value: $(message.body.payload)
+                                          type: any
+                                      description: Backup of websocket request
+                                  - parse:
+                                      version: 2.0.0
+                                      title: parse
+                                      parse-settings-reference:
+                                        parse-settings:
+                                          document_type: graphql
+                                          max_nesting_depth: 10
+                                      description: Parse the GraphQL query
+                                  - validate:
+                                      version: 2.7.0
+                                      title: validate & analyze
+                                      input: message
+                                      validate-against: graphql
+                                      description: >-
+                                        Validate the GraphQL query and analyze
+                                        the expected cost
+                                  - set-variable:
+                                      version: 2.0.0
+                                      title: restore backup
+                                      actions:
+                                        - set: message.body
+                                          value: $(websocket-backup)
+                                          type: any
+                                      description: Restore backup of websocket request
+                              - condition: $storageType() != "json"
+                                execute:
+                                  - validate:
+                                      version: 2.7.0
+                                      title: validate & analyze
+                                      input: message
+                                      validate-against: graphql
+                                      description: >-
+                                        Validate the GraphQL query and analyze
+                                        the expected cost
+                              - condition: >-
+                                  ((message.body.type = 'connection_init') or
+                                  (message.body.type = 'stop') or
+                                  (message.body.type = 'connection_terminate'))
+                                execute: []
+                              - otherwise:
+                                  - throw:
+                                      version: 2.0.0
+                                      title: throw
+                                      name: BadRequestError
+                                      description: >-
+                                        Reject all inputs not handled by other
+                                        branches of the switch
+                                      message: Bad Request
+                        - switch:
+                            version: 2.0.0
+                            title: switch
+                            case:
+                              - condition: >-
+                                  (message.attributes.graphql.query.operationType
+                                  = 'subscription')
+                                execute:
+                                  - ratelimit:
+                                      version: 2.4.0
+                                      title: ratelimit concurrent
+                                      description: GraphQL Subscription limit
+                                      count-limit:
+                                        - name: graphql-subscription-type-cost
+                                          operation: inc
+                                        - name: graphql-subscription-field-cost
+                                          operation: inc
+                                      source: plan-named
+                              - condition: >-
+                                  ($exists(message.attributes.graphql.query.operationType))
+                                execute:
+                                  - ratelimit:
+                                      version: 2.4.0
+                                      title: ratelimit expected
+                                      description: >-
+                                        Consume expected cost of query from rate
+                                        limits
+                                      rate-limit:
+                                        - name: graphql-type-cost
+                                          operation: consume
+                                        - name: graphql-field-cost
+                                          operation: consume
+                                      burst-limit: []
+                                      source: plan-named
+                              - otherwise: []
+                    response-assembly:
+                      execute:
+                        - parse:
+                            version: 2.0.0
+                            title: parse
+                            parse-settings-reference:
+                              default: apic-default-parsesettings
+                            description: Parse the response from the GraphQL backend server
+                        - switch:
+                            version: 2.0.0
+                            title: switch
+                            description: ''
+                            case:
+                              - condition: >-
+                                  ($exists(message.body.payload) and
+                                  message.body.payload != null and
+                                  $string(message.body.payload) != '{}')
+                                execute:
+                                  - set-variable:
+                                      version: 2.0.0
+                                      title: backup payload
+                                      actions:
+                                        - set: websocket-backup
+                                          value: $(message.body)
+                                          type: any
+                                        - set: message.body
+                                          value: $(message.body.payload)
+                                          type: any
+                                      description: Backup of websocket request
+                                  - parse:
+                                      version: 2.0.0
+                                      title: parse
+                                      parse-settings-reference:
+                                        default: apic-default-parsesettings
+                                      description: >-
+                                        Parse the response from the GraphQL
+                                        backend server
+                                  - validate:
+                                      version: 2.7.0
+                                      title: validate & analyze
+                                      input: message
+                                      validate-against: graphql
+                                      description: >-
+                                        Validate the returned JSON and analyze
+                                        the real cost
+                                  - set-variable:
+                                      version: 2.0.0
+                                      title: restore backup
+                                      actions:
+                                        - set: message.body
+                                          value: $(websocket-backup)
+                                          type: any
+                                      description: Restore backup of websocket request
+                              - condition: ($exists(message.body.data))
+                                execute:
+                                  - validate:
+                                      version: 2.7.0
+                                      title: validate & analyze
+                                      input: message
+                                      validate-against: graphql
+                                      description: >-
+                                        Validate the returned JSON and analyze
+                                        the real cost
+                              - otherwise: []
+                        - switch:
+                            version: 2.0.0
+                            title: switch
+                            case:
+                              - condition: >-
+                                  ($exists(message.attributes.graphql.query.operationType)
+                                  and
+                                  message.attributes.graphql.query.operationType
+                                  != 'subscription')
+                                execute:
+                                  - ratelimit:
+                                      version: 2.4.0
+                                      title: ratelimit actual
+                                      description: >-
+                                        Replenish over-estimated cost
+                                        (determined from response) to rate
+                                        limits
+                                      rate-limit:
+                                        - name: graphql-type-cost
+                                          operation: replenish
+                                        - name: graphql-field-cost
+                                          operation: replenish
+                                      burst-limit: []
+                                      source: plan-named
+                              - otherwise: []
+            - otherwise:
+                - parse:
+                    version: 2.0.0
+                    title: parse
+                    parse-settings-reference:
+                      parse-settings:
+                        document_type: graphql
+                        max_nesting_depth: 10
+                    description: Parse the GraphQL query
+                - switch:
+                    version: 2.0.0
+                    title: switch
+                    case:
+                      - condition: >-
+                          ($operationPath() = '/graphql' and
+                          message.attributes.graphql.query.operationType !=
+                          'subscription')
+                        execute:
+                          - graphql-execute:
+                              title: GraphQL execute
+                              version: 2.0.0
+                              targets:
+                                - target: root
+                                  execute:
+                                    - validate:
+                                        input: message
+                                        version: 2.7.0
+                                        validate-against: graphql
+                                        description: >-
+                                          Validate the GraphQL query and analyze
+                                          the expected cost
+                                        title: validate & analyze
+                                    - ratelimit:
+                                        version: 2.4.0
+                                        title: ratelimit expected
+                                        description: >-
+                                          Consume expected cost of query from rate
+                                          limits
+                                        rate-limit:
+                                          - name: graphql-type-cost
+                                            operation: consume
+                                          - name: graphql-field-cost
+                                            operation: consume
+                                        burst-limit: []
+                                        source: plan-named
+                                    - invoke:
+                                        cache-ttl: 900
+                                        graphql-send-type: detect
+                                        parameter-control:
+                                          type: allowlist
+                                          values: []
+                                        http-version: HTTP/1.1
+                                        header-control:
+                                          type: allowlist
+                                          values:
+                                            - User-Agent
+                                            - X-Client-IP
+                                            - X-Global-Transaction-ID
+                                            - Content-Type
+                                        chunked-uploads: true
+                                        verb: keep
+                                        stop-on-error:
+                                          - ConnectionError
+                                          - SOAPError
+                                          - OperationError
+                                        websocket-upgrade: false
+                                        description: Invoke the backend GraphQL server
+                                        compression: false
+                                        title: graphql-invoke
+                                        target-url: >-
+                                          https://spacex-production.up.railway.app/
+                                        backend-type: graphql
+                                        version: 2.3.0
+                                        cache-response: protocol
+                                        timeout: 60
+                                    - parse:
+                                        title: parse
+                                        version: 2.0.0
+                                        description: >-
+                                          Parse the response from the GraphQL
+                                          backend server
+                                        parse-settings-reference:
+                                          default: apic-default-parsesettings
+                                    - validate:
+                                        input: message
+                                        version: 2.7.0
+                                        validate-against: graphql
+                                        description: >-
+                                          Validate the returned JSON and analyze
+                                          the real cost
+                                        title: validate & analyze
+                                    - ratelimit:
+                                        version: 2.4.0
+                                        title: ratelimit actual
+                                        description: >-
+                                          Replenish over-estimated cost
+                                          (determined from response) to rate
+                                          limits
+                                        rate-limit:
+                                          - name: graphql-type-cost
+                                            operation: replenish
+                                          - name: graphql-field-cost
+                                            operation: replenish
+                                        burst-limit: []
+                                        source: plan-named
+                                  catch:
+                                    - execute: []
+                                      errors:
+                                        - ConnectionError
+                                - target: __introspection
+                                  execute:
+                                    - ratelimit:
+                                        source: plan-named
+                                        version: 2.4.0
+                                        description: >-
+                                          Apply design-time rate limit for
+                                          introspection query
+                                        title: ratelimit design-time
+                                        burst-limit: []
+                                        rate-limit:
+                                          - operation: consume
+                                            name: graphql-design-request
+                                    - validate:
+                                        input: message
+                                        version: 2.7.0
+                                        validate-against: graphql
+                                        description: >-
+                                          Validate the GraphQL query and analyze
+                                          the expected cost
+                                        title: validate & analyze
+                                    - graphql-introspect:
+                                        input: message
+                                        version: 2.0.0
+                                        description: >-
+                                          Introspect the GraphQL schema using the
+                                          query
+                                        title: graphql-introspect
+                      - condition: ($operationPath() = '/graphql/cost')
+                        execute:
+                          - ratelimit:
+                              version: 2.4.0
+                              title: ratelimit design-time
+                              description: Apply design-time rate limit for cost analysis
+                              rate-limit:
+                                - name: graphql-design-request
+                                  operation: consume
+                              burst-limit: []
+                              source: plan-named
+                          - validate:
+                              version: 2.7.0
+                              title: validate & analyze
+                              input: message
+                              validate-against: graphql
+                              description: >-
+                                Validate the GraphQL query and analyze the
+                                expected cost
+                          - set-variable:
+                              version: 2.0.0
+                              title: set-variable
+                              actions:
+                                - set: message.body
+                                  value: $(message.attributes.graphql)
+                                  type: any
+                              description: >-
+                                Copy the cost estimate for the GraphQL query to
+                                the output
+                      - otherwise:
+                          - throw:
+                              version: 2.0.0
+                              title: throw
+                              name: BadRequestError
+                              description: >-
+                                Reject all inputs not handled by other branches
+                                of the switch
+                              message: Bad Request
+                    description: >-
+                      Choose between executing on backend server or other
+                      options to be completed on the Gateway
+    finally: []
+  html-page: store:///graphiql.html
+  gateway: datapower-api-gateway
+  phase: realized
+  enforced: true
+  testable: true
+  activity-log:
+    enabled: true
+    success-content: activity
+    error-content: payload
+definitions:
+  spacex-production.up.railway.app:
+    type: 'null'
+    x-ibm-schema:
+      type: graphql
+      url: https://spacex-production.up.railway.app/
+      file: >-
+        ZGlyZWN0aXZlIEBjb250YWN0KAogICIiIkNvbnRhY3QgdGl0bGUgb2YgdGhlIHN1YmdyYXBoIG93bmVyIiIiCiAgbmFtZTogU3RyaW5nIQoKICAiIiJVUkwgd2hlcmUgdGhlIHN1YmdyYXBoJ3Mgb3duZXIgY2FuIGJlIHJlYWNoZWQiIiIKICB1cmw6IFN0cmluZwoKICAiIiJPdGhlciByZWxldmFudCBub3RlcyBjYW4gYmUgaW5jbHVkZWQgaGVyZTsgc3VwcG9ydHMgbWFya2Rvd24gbGlua3MiIiIKICBkZXNjcmlwdGlvbjogU3RyaW5nCikgb24gU0NIRU1BCgpkaXJlY3RpdmUgQGxpbmsodXJsOiBTdHJpbmcsIGFzOiBTdHJpbmcsIGZvcjogbGlua19fUHVycG9zZSwgaW1wb3J0OiBbbGlua19fSW1wb3J0XSkgb24gU0NIRU1BCgpkaXJlY3RpdmUgQGtleShmaWVsZHM6IGZlZGVyYXRpb25fX0ZpZWxkU2V0ISwgcmVzb2x2YWJsZTogQm9vbGVhbiA9IHRydWUpIG9uIE9CSkVDVCB8IElOVEVSRkFDRQoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX19yZXF1aXJlcyhmaWVsZHM6IGZlZGVyYXRpb25fX0ZpZWxkU2V0ISkgb24gRklFTERfREVGSU5JVElPTgoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX19wcm92aWRlcyhmaWVsZHM6IGZlZGVyYXRpb25fX0ZpZWxkU2V0ISkgb24gRklFTERfREVGSU5JVElPTgoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX19leHRlcm5hbChyZWFzb246IFN0cmluZykgb24gT0JKRUNUIHwgRklFTERfREVGSU5JVElPTgoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX190YWcobmFtZTogU3RyaW5nISkgb24gRklFTERfREVGSU5JVElPTiB8IE9CSkVDVCB8IElOVEVSRkFDRSB8IFVOSU9OIHwgQVJHVU1FTlRfREVGSU5JVElPTiB8IFNDQUxBUiB8IEVOVU0gfCBFTlVNX1ZBTFVFIHwgSU5QVVRfT0JKRUNUIHwgSU5QVVRfRklFTERfREVGSU5JVElPTiB8IFNDSEVNQQoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX19leHRlbmRzIG9uIE9CSkVDVCB8IElOVEVSRkFDRQoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX19zaGFyZWFibGUgb24gT0JKRUNUIHwgRklFTERfREVGSU5JVElPTgoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX19pbmFjY2Vzc2libGUgb24gRklFTERfREVGSU5JVElPTiB8IE9CSkVDVCB8IElOVEVSRkFDRSB8IFVOSU9OIHwgQVJHVU1FTlRfREVGSU5JVElPTiB8IFNDQUxBUiB8IEVOVU0gfCBFTlVNX1ZBTFVFIHwgSU5QVVRfT0JKRUNUIHwgSU5QVVRfRklFTERfREVGSU5JVElPTgoKZGlyZWN0aXZlIEBmZWRlcmF0aW9uX19vdmVycmlkZShmcm9tOiBTdHJpbmchKSBvbiBGSUVMRF9ERUZJTklUSU9OCgpkaXJlY3RpdmUgQGZlZGVyYXRpb25fX2NvbXBvc2VEaXJlY3RpdmUobmFtZTogU3RyaW5nKSBvbiBTQ0hFTUEKCmRpcmVjdGl2ZSBAZmVkZXJhdGlvbl9faW50ZXJmYWNlT2JqZWN0IG9uIE9CSkVDVAoKdHlwZSBBZGRyZXNzIHsKICBhZGRyZXNzOiBTdHJpbmcKICBjaXR5OiBTdHJpbmcKICBzdGF0ZTogU3RyaW5nCn0KCnR5cGUgQ2Fwc3VsZSB7CiAgZHJhZ29uOiBEcmFnb24gQGRlcHJlY2F0ZWQocmVhc29uOiAiVGhpcyBpcyBub3QgYXZhaWxhYmxlIGluIHRoZSBSRVNUIEFQSSBhZnRlciBNb25nb0RCIGhhcyBiZWVuIGRlcHJlY2F0ZWQiKQogIGlkOiBJRAogIGxhbmRpbmdzOiBJbnQKICBtaXNzaW9uczogW0NhcHN1bGVNaXNzaW9uXQogIG9yaWdpbmFsX2xhdW5jaDogRGF0ZQogIHJldXNlX2NvdW50OiBJbnQKICBzdGF0dXM6IFN0cmluZwogIHR5cGU6IFN0cmluZwp9Cgp0eXBlIENhcHN1bGVNaXNzaW9uIHsKICBmbGlnaHQ6IEludAogIG5hbWU6IFN0cmluZwp9CgppbnB1dCBDYXBzdWxlc0ZpbmQgewogIGlkOiBJRAogIGxhbmRpbmdzOiBJbnQKICBtaXNzaW9uOiBTdHJpbmcKICBvcmlnaW5hbF9sYXVuY2g6IERhdGUKICByZXVzZV9jb3VudDogSW50CiAgc3RhdHVzOiBTdHJpbmcKICB0eXBlOiBTdHJpbmcKfQoKdHlwZSBDb3JlIHsKICBhc2RzX2F0dGVtcHRzOiBJbnQKICBhc2RzX2xhbmRpbmdzOiBJbnQKICBibG9jazogSW50CiAgaWQ6IElECiAgbWlzc2lvbnM6IFtDYXBzdWxlTWlzc2lvbl0KICBvcmlnaW5hbF9sYXVuY2g6IERhdGUKICByZXVzZV9jb3VudDogSW50CiAgcnRsc19hdHRlbXB0czogSW50CiAgcnRsc19sYW5kaW5nczogSW50CiAgc3RhdHVzOiBTdHJpbmcKICB3YXRlcl9sYW5kaW5nOiBCb29sZWFuCn0KCnR5cGUgQ29yZU1pc3Npb24gewogIGZsaWdodDogSW50CiAgbmFtZTogU3RyaW5nCn0KCmlucHV0IENvcmVzRmluZCB7CiAgYXNkc19hdHRlbXB0czogSW50CiAgYXNkc19sYW5kaW5nczogSW50CiAgYmxvY2s6IEludAogIGlkOiBTdHJpbmcKICBtaXNzaW9uczogU3RyaW5nCiAgb3JpZ2luYWxfbGF1bmNoOiBEYXRlCiAgcmV1c2VfY291bnQ6IEludAogIHJ0bHNfYXR0ZW1wdHM6IEludAogIHJ0bHNfbGFuZGluZ3M6IEludAogIHN0YXR1czogU3RyaW5nCiAgd2F0ZXJfbGFuZGluZzogQm9vbGVhbgp9CgpzY2FsYXIgRGF0ZQoKdHlwZSBEaXN0YW5jZSB7CiAgZmVldDogRmxvYXQKICBtZXRlcnM6IEZsb2F0Cn0KCnR5cGUgRHJhZ29uIHsKICBhY3RpdmU6IEJvb2xlYW4KICBjcmV3X2NhcGFjaXR5OiBJbnQKICBkZXNjcmlwdGlvbjogU3RyaW5nCiAgZGlhbWV0ZXI6IERpc3RhbmNlCiAgZHJ5X21hc3Nfa2c6IEludAogIGRyeV9tYXNzX2xiOiBJbnQKICBmaXJzdF9mbGlnaHQ6IFN0cmluZwogIGhlYXRfc2hpZWxkOiBEcmFnb25IZWF0U2hpZWxkCiAgaGVpZ2h0X3dfdHJ1bms6IERpc3RhbmNlCiAgaWQ6IElECiAgbGF1bmNoX3BheWxvYWRfbWFzczogTWFzcwogIGxhdW5jaF9wYXlsb2FkX3ZvbDogVm9sdW1lCiAgbmFtZTogU3RyaW5nCiAgb3JiaXRfZHVyYXRpb25feXI6IEludAogIHByZXNzdXJpemVkX2NhcHN1bGU6IERyYWdvblByZXNzdXJpemVkQ2Fwc3VsZQogIHJldHVybl9wYXlsb2FkX21hc3M6IE1hc3MKICByZXR1cm5fcGF5bG9hZF92b2w6IFZvbHVtZQogIHNpZGV3YWxsX2FuZ2xlX2RlZzogRmxvYXQKICB0aHJ1c3RlcnM6IFtEcmFnb25UaHJ1c3RdCiAgdHJ1bms6IERyYWdvblRydW5rCiAgdHlwZTogU3RyaW5nCiAgd2lraXBlZGlhOiBTdHJpbmcKfQoKdHlwZSBEcmFnb25IZWF0U2hpZWxkIHsKICBkZXZfcGFydG5lcjogU3RyaW5nCiAgbWF0ZXJpYWw6IFN0cmluZwogIHNpemVfbWV0ZXJzOiBGbG9hdAogIHRlbXBfZGVncmVlczogSW50Cn0KCnR5cGUgRHJhZ29uUHJlc3N1cml6ZWRDYXBzdWxlIHsKICBwYXlsb2FkX3ZvbHVtZTogVm9sdW1lCn0KCnR5cGUgRHJhZ29uVGhydXN0IHsKICBhbW91bnQ6IEludAogIGZ1ZWxfMTogU3RyaW5nCiAgZnVlbF8yOiBTdHJpbmcKICBwb2RzOiBJbnQKICB0aHJ1c3Q6IEZvcmNlCiAgdHlwZTogU3RyaW5nCn0KCnR5cGUgRHJhZ29uVHJ1bmsgewogIGNhcmdvOiBEcmFnb25UcnVua0NhcmdvCiAgdHJ1bmtfdm9sdW1lOiBWb2x1bWUKfQoKdHlwZSBEcmFnb25UcnVua0NhcmdvIHsKICBzb2xhcl9hcnJheTogSW50CiAgdW5wcmVzc3VyaXplZF9jYXJnbzogQm9vbGVhbgp9Cgp0eXBlIEZvcmNlIHsKICBrTjogRmxvYXQKICBsYmY6IEZsb2F0Cn0KCnR5cGUgSGlzdG9yaWVzUmVzdWx0IHsKICBkYXRhOiBbSGlzdG9yeV0KICByZXN1bHQ6IFJlc3VsdAp9Cgp0eXBlIEhpc3RvcnkgewogIGRldGFpbHM6IFN0cmluZwogIGV2ZW50X2RhdGVfdW5peDogRGF0ZQogIGV2ZW50X2RhdGVfdXRjOiBEYXRlCiAgZmxpZ2h0OiBMYXVuY2gKICBpZDogSUQKICBsaW5rczogTGluawogIHRpdGxlOiBTdHJpbmcKfQoKaW5wdXQgSGlzdG9yeUZpbmQgewogIGVuZDogRGF0ZQogIGZsaWdodF9udW1iZXI6IEludAogIGlkOiBJRAogIHN0YXJ0OiBEYXRlCn0KCnR5cGUgSW5mbyB7CiAgY2VvOiBTdHJpbmcKICBjb286IFN0cmluZwogIGN0bzogU3RyaW5nCiAgY3RvX3Byb3B1bHNpb246IFN0cmluZwogIGVtcGxveWVlczogSW50CiAgZm91bmRlZDogSW50CiAgZm91bmRlcjogU3RyaW5nCiAgaGVhZHF1YXJ0ZXJzOiBBZGRyZXNzCiAgbGF1bmNoX3NpdGVzOiBJbnQKICBsaW5rczogSW5mb0xpbmtzCiAgbmFtZTogU3RyaW5nCiAgc3VtbWFyeTogU3RyaW5nCiAgdGVzdF9zaXRlczogSW50CiAgdmFsdWF0aW9uOiBGbG9hdAogIHZlaGljbGVzOiBJbnQKfQoKdHlwZSBJbmZvTGlua3MgewogIGVsb25fdHdpdHRlcjogU3RyaW5nCiAgZmxpY2tyOiBTdHJpbmcKICB0d2l0dGVyOiBTdHJpbmcKICB3ZWJzaXRlOiBTdHJpbmcKfQoKdHlwZSBMYW5kcGFkIHsKICBhdHRlbXB0ZWRfbGFuZGluZ3M6IFN0cmluZwogIGRldGFpbHM6IFN0cmluZwogIGZ1bGxfbmFtZTogU3RyaW5nCiAgaWQ6IElECiAgbGFuZGluZ190eXBlOiBTdHJpbmcKICBsb2NhdGlvbjogTG9jYXRpb24KICBzdGF0dXM6IFN0cmluZwogIHN1Y2Nlc3NmdWxfbGFuZGluZ3M6IFN0cmluZwogIHdpa2lwZWRpYTogU3RyaW5nCn0KCnR5cGUgTGF1bmNoIHsKICBkZXRhaWxzOiBTdHJpbmcKICBpZDogSUQKICBpc190ZW50YXRpdmU6IEJvb2xlYW4KICBsYXVuY2hfZGF0ZV9sb2NhbDogRGF0ZQogIGxhdW5jaF9kYXRlX3VuaXg6IERhdGUKICBsYXVuY2hfZGF0ZV91dGM6IERhdGUKICBsYXVuY2hfc2l0ZTogTGF1bmNoU2l0ZQogIGxhdW5jaF9zdWNjZXNzOiBCb29sZWFuCiAgbGF1bmNoX3llYXI6IFN0cmluZwogIGxpbmtzOiBMYXVuY2hMaW5rcwogIG1pc3Npb25faWQ6IFtTdHJpbmddCiAgbWlzc2lvbl9uYW1lOiBTdHJpbmcKICByb2NrZXQ6IExhdW5jaFJvY2tldAogIHNoaXBzOiBbU2hpcF0KICBzdGF0aWNfZmlyZV9kYXRlX3VuaXg6IERhdGUKICBzdGF0aWNfZmlyZV9kYXRlX3V0YzogRGF0ZQogIHRlbGVtZXRyeTogTGF1bmNoVGVsZW1ldHJ5CiAgdGVudGF0aXZlX21heF9wcmVjaXNpb246IFN0cmluZwogIHVwY29taW5nOiBCb29sZWFuCn0KCmlucHV0IExhdW5jaEZpbmQgewogIGFwb2Fwc2lzX2ttOiBGbG9hdAogIGJsb2NrOiBJbnQKICBjYXBfc2VyaWFsOiBTdHJpbmcKICBjYXBzdWxlX3JldXNlOiBTdHJpbmcKICBjb3JlX2ZsaWdodDogSW50CiAgY29yZV9yZXVzZTogU3RyaW5nCiAgY29yZV9zZXJpYWw6IFN0cmluZwogIGN1c3RvbWVyOiBTdHJpbmcKICBlY2NlbnRyaWNpdHk6IEZsb2F0CiAgZW5kOiBEYXRlCiAgZXBvY2g6IERhdGUKICBmYWlyaW5nc19yZWNvdmVyZWQ6IFN0cmluZwogIGZhaXJpbmdzX3JlY292ZXJ5X2F0dGVtcHQ6IFN0cmluZwogIGZhaXJpbmdzX3JldXNlOiBTdHJpbmcKICBmYWlyaW5nc19yZXVzZWQ6IFN0cmluZwogIGZhaXJpbmdzX3NoaXA6IFN0cmluZwogIGdyaWRmaW5zOiBTdHJpbmcKICBpZDogSUQKICBpbmNsaW5hdGlvbl9kZWc6IEZsb2F0CiAgbGFuZF9zdWNjZXNzOiBTdHJpbmcKICBsYW5kaW5nX2ludGVudDogU3RyaW5nCiAgbGFuZGluZ190eXBlOiBTdHJpbmcKICBsYW5kaW5nX3ZlaGljbGU6IFN0cmluZwogIGxhdW5jaF9kYXRlX2xvY2FsOiBEYXRlCiAgbGF1bmNoX2RhdGVfdXRjOiBEYXRlCiAgbGF1bmNoX3N1Y2Nlc3M6IFN0cmluZwogIGxhdW5jaF95ZWFyOiBTdHJpbmcKICBsZWdzOiBTdHJpbmcKICBsaWZlc3Bhbl95ZWFyczogRmxvYXQKICBsb25naXR1ZGU6IEZsb2F0CiAgbWFudWZhY3R1cmVyOiBTdHJpbmcKICBtZWFuX21vdGlvbjogRmxvYXQKICBtaXNzaW9uX2lkOiBTdHJpbmcKICBtaXNzaW9uX25hbWU6IFN0cmluZwogIG5hdGlvbmFsaXR5OiBTdHJpbmcKICBub3JhZF9pZDogSW50CiAgb3JiaXQ6IFN0cmluZwogIHBheWxvYWRfaWQ6IFN0cmluZwogIHBheWxvYWRfdHlwZTogU3RyaW5nCiAgcGVyaWFwc2lzX2ttOiBGbG9hdAogIHBlcmlvZF9taW46IEZsb2F0CiAgcmFhbjogRmxvYXQKICByZWZlcmVuY2Vfc3lzdGVtOiBTdHJpbmcKICByZWdpbWU6IFN0cmluZwogIHJldXNlZDogU3RyaW5nCiAgcm9ja2V0X2lkOiBTdHJpbmcKICByb2NrZXRfbmFtZTogU3RyaW5nCiAgcm9ja2V0X3R5cGU6IFN0cmluZwogIHNlY29uZF9zdGFnZV9ibG9jazogU3RyaW5nCiAgc2VtaV9tYWpvcl9heGlzX2ttOiBGbG9hdAogIHNoaXA6IFN0cmluZwogIHNpZGVfY29yZTFfcmV1c2U6IFN0cmluZwogIHNpZGVfY29yZTJfcmV1c2U6IFN0cmluZwogIHNpdGVfaWQ6IFN0cmluZwogIHNpdGVfbmFtZV9sb25nOiBTdHJpbmcKICBzaXRlX25hbWU6IFN0cmluZwogIHN0YXJ0OiBEYXRlCiAgdGJkOiBTdHJpbmcKICB0ZW50YXRpdmVfbWF4X3ByZWNpc2lvbjogU3RyaW5nCiAgdGVudGF0aXZlOiBTdHJpbmcKfQoKdHlwZSBMYXVuY2hMaW5rcyB7CiAgYXJ0aWNsZV9saW5rOiBTdHJpbmcKICBmbGlja3JfaW1hZ2VzOiBbU3RyaW5nXQogIG1pc3Npb25fcGF0Y2g6IFN0cmluZwogIG1pc3Npb25fcGF0Y2hfc21hbGw6IFN0cmluZwogIHByZXNza2l0OiBTdHJpbmcKICByZWRkaXRfY2FtcGFpZ246IFN0cmluZwogIHJlZGRpdF9sYXVuY2g6IFN0cmluZwogIHJlZGRpdF9tZWRpYTogU3RyaW5nCiAgcmVkZGl0X3JlY292ZXJ5OiBTdHJpbmcKICB2aWRlb19saW5rOiBTdHJpbmcKICB3aWtpcGVkaWE6IFN0cmluZwp9Cgp0eXBlIExhdW5jaFJvY2tldCB7CiAgZmFpcmluZ3M6IExhdW5jaFJvY2tldEZhaXJpbmdzCiAgZmlyc3Rfc3RhZ2U6IExhdW5jaFJvY2tldEZpcnN0U3RhZ2UKICByb2NrZXQ6IFJvY2tldAogIHJvY2tldF9uYW1lOiBTdHJpbmcKICByb2NrZXRfdHlwZTogU3RyaW5nCiAgc2Vjb25kX3N0YWdlOiBMYXVuY2hSb2NrZXRTZWNvbmRTdGFnZQp9Cgp0eXBlIExhdW5jaFJvY2tldEZhaXJpbmdzIHsKICByZWNvdmVyZWQ6IEJvb2xlYW4KICByZWNvdmVyeV9hdHRlbXB0OiBCb29sZWFuCiAgcmV1c2VkOiBCb29sZWFuCiAgc2hpcDogU3RyaW5nCn0KCnR5cGUgTGF1bmNoUm9ja2V0Rmlyc3RTdGFnZSB7CiAgY29yZXM6IFtMYXVuY2hSb2NrZXRGaXJzdFN0YWdlQ29yZV0KfQoKdHlwZSBMYXVuY2hSb2NrZXRGaXJzdFN0YWdlQ29yZSB7CiAgYmxvY2s6IEludAogIGNvcmU6IENvcmUKICBmbGlnaHQ6IEludAogIGdyaWRmaW5zOiBCb29sZWFuCiAgbGFuZF9zdWNjZXNzOiBCb29sZWFuCiAgbGFuZGluZ19pbnRlbnQ6IEJvb2xlYW4KICBsYW5kaW5nX3R5cGU6IFN0cmluZwogIGxhbmRpbmdfdmVoaWNsZTogU3RyaW5nCiAgbGVnczogQm9vbGVhbgogIHJldXNlZDogQm9vbGVhbgp9Cgp0eXBlIExhdW5jaFJvY2tldFNlY29uZFN0YWdlIHsKICBibG9jazogSW50CiAgcGF5bG9hZHM6IFtQYXlsb2FkXQp9Cgp0eXBlIExhdW5jaFNpdGUgewogIHNpdGVfaWQ6IFN0cmluZwogIHNpdGVfbmFtZTogU3RyaW5nCiAgc2l0ZV9uYW1lX2xvbmc6IFN0cmluZwp9Cgp0eXBlIExhdW5jaFRlbGVtZXRyeSB7CiAgZmxpZ2h0X2NsdWI6IFN0cmluZwp9Cgp0eXBlIExhdW5jaGVzUGFzdFJlc3VsdCB7CiAgZGF0YTogW0xhdW5jaF0KICByZXN1bHQ6IFJlc3VsdAp9Cgp0eXBlIExhdW5jaHBhZCB7CiAgYXR0ZW1wdGVkX2xhdW5jaGVzOiBJbnQKICBkZXRhaWxzOiBTdHJpbmcKICBpZDogSUQKICBsb2NhdGlvbjogTG9jYXRpb24KICBuYW1lOiBTdHJpbmcKICBzdGF0dXM6IFN0cmluZwogIHN1Y2Nlc3NmdWxfbGF1bmNoZXM6IEludAogIHZlaGljbGVzX2xhdW5jaGVkOiBbUm9ja2V0XQogIHdpa2lwZWRpYTogU3RyaW5nCn0KCnR5cGUgTGluayB7CiAgYXJ0aWNsZTogU3RyaW5nCiAgcmVkZGl0OiBTdHJpbmcKICB3aWtpcGVkaWE6IFN0cmluZwp9Cgp0eXBlIExvY2F0aW9uIHsKICBsYXRpdHVkZTogRmxvYXQKICBsb25naXR1ZGU6IEZsb2F0CiAgbmFtZTogU3RyaW5nCiAgcmVnaW9uOiBTdHJpbmcKfQoKdHlwZSBNYXNzIHsKICBrZzogSW50CiAgbGI6IEludAp9Cgp0eXBlIE1pc3Npb24gewogIGRlc2NyaXB0aW9uOiBTdHJpbmcKICBpZDogSUQKICBtYW51ZmFjdHVyZXJzOiBbU3RyaW5nXQogIG5hbWU6IFN0cmluZwogIHBheWxvYWRzOiBbUGF5bG9hZF0KICB0d2l0dGVyOiBTdHJpbmcKICB3ZWJzaXRlOiBTdHJpbmcKICB3aWtpcGVkaWE6IFN0cmluZwp9Cgp0eXBlIE1pc3Npb25SZXN1bHQgewogIGRhdGE6IFtNaXNzaW9uXQogIHJlc3VsdDogUmVzdWx0Cn0KCmlucHV0IE1pc3Npb25zRmluZCB7CiAgaWQ6IElECiAgbWFudWZhY3R1cmVyOiBTdHJpbmcKICBuYW1lOiBTdHJpbmcKICBwYXlsb2FkX2lkOiBTdHJpbmcKfQoKdHlwZSBNdXRhdGlvbiB7CiAgIiIiCiAgZGVsZXRlIGRhdGEgZnJvbSB0aGUgdGFibGU6ICJ1c2VycyIKICAiIiIKICBkZWxldGVfdXNlcnMoCiAgICAiIiJmaWx0ZXIgdGhlIHJvd3Mgd2hpY2ggaGF2ZSB0byBiZSBkZWxldGVkIiIiCiAgICB3aGVyZTogdXNlcnNfYm9vbF9leHAhCiAgKTogdXNlcnNfbXV0YXRpb25fcmVzcG9uc2UKCiAgIiIiCiAgaW5zZXJ0IGRhdGEgaW50byB0aGUgdGFibGU6ICJ1c2VycyIKICAiIiIKICBpbnNlcnRfdXNlcnMoCiAgICAiIiJ0aGUgcm93cyB0byBiZSBpbnNlcnRlZCIiIgogICAgb2JqZWN0czogW3VzZXJzX2luc2VydF9pbnB1dCFdIQoKICAgICIiIm9uIGNvbmZsaWN0IGNvbmRpdGlvbiIiIgogICAgb25fY29uZmxpY3Q6IHVzZXJzX29uX2NvbmZsaWN0CiAgKTogdXNlcnNfbXV0YXRpb25fcmVzcG9uc2UKCiAgIiIiCiAgdXBkYXRlIGRhdGEgb2YgdGhlIHRhYmxlOiAidXNlcnMiCiAgIiIiCiAgdXBkYXRlX3VzZXJzKAogICAgIiIic2V0cyB0aGUgY29sdW1ucyBvZiB0aGUgZmlsdGVyZWQgcm93cyB0byB0aGUgZ2l2ZW4gdmFsdWVzIiIiCiAgICBfc2V0OiB1c2Vyc19zZXRfaW5wdXQKCiAgICAiIiJmaWx0ZXIgdGhlIHJvd3Mgd2hpY2ggaGF2ZSB0byBiZSB1cGRhdGVkIiIiCiAgICB3aGVyZTogdXNlcnNfYm9vbF9leHAhCiAgKTogdXNlcnNfbXV0YXRpb25fcmVzcG9uc2UKfQoKc2NhbGFyIE9iamVjdElECgp0eXBlIFBheWxvYWQgewogIGN1c3RvbWVyczogW1N0cmluZ10KICBpZDogSUQKICBtYW51ZmFjdHVyZXI6IFN0cmluZwogIG5hdGlvbmFsaXR5OiBTdHJpbmcKICBub3JhZF9pZDogW0ludF0KICBvcmJpdDogU3RyaW5nCiAgb3JiaXRfcGFyYW1zOiBQYXlsb2FkT3JiaXRQYXJhbXMKICBwYXlsb2FkX21hc3Nfa2c6IEZsb2F0CiAgcGF5bG9hZF9tYXNzX2xiczogRmxvYXQKICBwYXlsb2FkX3R5cGU6IFN0cmluZwogIHJldXNlZDogQm9vbGVhbgp9Cgp0eXBlIFBheWxvYWRPcmJpdFBhcmFtcyB7CiAgYXBvYXBzaXNfa206IEZsb2F0CiAgYXJnX29mX3BlcmljZW50ZXI6IEZsb2F0CiAgZWNjZW50cmljaXR5OiBGbG9hdAogIGVwb2NoOiBEYXRlCiAgaW5jbGluYXRpb25fZGVnOiBGbG9hdAogIGxpZmVzcGFuX3llYXJzOiBGbG9hdAogIGxvbmdpdHVkZTogRmxvYXQKICBtZWFuX2Fub21hbHk6IEZsb2F0CiAgbWVhbl9tb3Rpb246IEZsb2F0CiAgcGVyaWFwc2lzX2ttOiBGbG9hdAogIHBlcmlvZF9taW46IEZsb2F0CiAgcmFhbjogRmxvYXQKICByZWZlcmVuY2Vfc3lzdGVtOiBTdHJpbmcKICByZWdpbWU6IFN0cmluZwogIHNlbWlfbWFqb3JfYXhpc19rbTogRmxvYXQKfQoKaW5wdXQgUGF5bG9hZHNGaW5kIHsKICBhcG9hcHNpc19rbTogRmxvYXQKICBjdXN0b21lcjogU3RyaW5nCiAgZWNjZW50cmljaXR5OiBGbG9hdAogIGVwb2NoOiBEYXRlCiAgaW5jbGluYXRpb25fZGVnOiBGbG9hdAogIGxpZmVzcGFuX3llYXJzOiBGbG9hdAogIGxvbmdpdHVkZTogRmxvYXQKICBtYW51ZmFjdHVyZXI6IFN0cmluZwogIG1lYW5fbW90aW9uOiBGbG9hdAogIG5hdGlvbmFsaXR5OiBTdHJpbmcKICBub3JhZF9pZDogSW50CiAgb3JiaXQ6IFN0cmluZwogIHBheWxvYWRfaWQ6IElECiAgcGF5bG9hZF90eXBlOiBTdHJpbmcKICBwZXJpYXBzaXNfa206IEZsb2F0CiAgcGVyaW9kX21pbjogRmxvYXQKICByYWFuOiBGbG9hdAogIHJlZmVyZW5jZV9zeXN0ZW06IFN0cmluZwogIHJlZ2ltZTogU3RyaW5nCiAgcmV1c2VkOiBCb29sZWFuCiAgc2VtaV9tYWpvcl9heGlzX2ttOiBGbG9hdAp9Cgp0eXBlIFF1ZXJ5IHsKICBjYXBzdWxlKGlkOiBJRCEpOiBDYXBzdWxlCiAgY2Fwc3VsZXMoZmluZDogQ2Fwc3VsZXNGaW5kLCBsaW1pdDogSW50LCBvZmZzZXQ6IEludCwgb3JkZXI6IFN0cmluZywgc29ydDogU3RyaW5nKTogW0NhcHN1bGVdCiAgY2Fwc3VsZXNQYXN0KGZpbmQ6IENhcHN1bGVzRmluZCwgbGltaXQ6IEludCwgb2Zmc2V0OiBJbnQsIG9yZGVyOiBTdHJpbmcsIHNvcnQ6IFN0cmluZyk6IFtDYXBzdWxlXQogIGNhcHN1bGVzVXBjb21pbmcoZmluZDogQ2Fwc3VsZXNGaW5kLCBsaW1pdDogSW50LCBvZmZzZXQ6IEludCwgb3JkZXI6IFN0cmluZywgc29ydDogU3RyaW5nKTogW0NhcHN1bGVdCiAgY29tcGFueTogSW5mbwogIGNvcmUoaWQ6IElEISk6IENvcmUKICBjb3JlcyhmaW5kOiBDb3Jlc0ZpbmQsIGxpbWl0OiBJbnQsIG9mZnNldDogSW50LCBvcmRlcjogU3RyaW5nLCBzb3J0OiBTdHJpbmcpOiBbQ29yZV0KICBjb3Jlc1Bhc3QoZmluZDogQ29yZXNGaW5kLCBsaW1pdDogSW50LCBvZmZzZXQ6IEludCwgb3JkZXI6IFN0cmluZywgc29ydDogU3RyaW5nKTogW0NvcmVdCiAgY29yZXNVcGNvbWluZyhmaW5kOiBDb3Jlc0ZpbmQsIGxpbWl0OiBJbnQsIG9mZnNldDogSW50LCBvcmRlcjogU3RyaW5nLCBzb3J0OiBTdHJpbmcpOiBbQ29yZV0KICBkcmFnb24oaWQ6IElEISk6IERyYWdvbgogIGRyYWdvbnMobGltaXQ6IEludCwgb2Zmc2V0OiBJbnQpOiBbRHJhZ29uXQogIGhpc3RvcmllcyhmaW5kOiBIaXN0b3J5RmluZCwgbGltaXQ6IEludCwgb2Zmc2V0OiBJbnQsIG9yZGVyOiBTdHJpbmcsIHNvcnQ6IFN0cmluZyk6IFtIaXN0b3J5XQogIGhpc3Rvcmllc1Jlc3VsdChmaW5kOiBIaXN0b3J5RmluZCwgbGltaXQ6IEludCwgb2Zmc2V0OiBJbnQsIG9yZGVyOiBTdHJpbmcsIHNvcnQ6IFN0cmluZyk6IEhpc3Rvcmllc1Jlc3VsdAogIGhpc3RvcnkoaWQ6IElEISk6IEhpc3RvcnkKICBsYW5kcGFkKGlkOiBJRCEpOiBMYW5kcGFkCiAgbGFuZHBhZHMobGltaXQ6IEludCwgb2Zmc2V0OiBJbnQpOiBbTGFuZHBhZF0KICBsYXVuY2goaWQ6IElEISk6IExhdW5jaAogIGxhdW5jaExhdGVzdChvZmZzZXQ6IEludCk6IExhdW5jaAogIGxhdW5jaE5leHQob2Zmc2V0OiBJbnQpOiBMYXVuY2gKICBsYXVuY2hlcyhmaW5kOiBMYXVuY2hGaW5kLCBsaW1pdDogSW50LCBvZmZzZXQ6IEludCwgb3JkZXI6IFN0cmluZywgc29ydDogU3RyaW5nKTogW0xhdW5jaF0KICBsYXVuY2hlc1Bhc3QoZmluZDogTGF1bmNoRmluZCwgbGltaXQ6IEludCwgb2Zmc2V0OiBJbnQsIG9yZGVyOiBTdHJpbmcsIHNvcnQ6IFN0cmluZyk6IFtMYXVuY2hdCiAgbGF1bmNoZXNQYXN0UmVzdWx0KGZpbmQ6IExhdW5jaEZpbmQsIGxpbWl0OiBJbnQsIG9mZnNldDogSW50LCBvcmRlcjogU3RyaW5nLCBzb3J0OiBTdHJpbmcpOiBMYXVuY2hlc1Bhc3RSZXN1bHQKICBsYXVuY2hlc1VwY29taW5nKGZpbmQ6IExhdW5jaEZpbmQsIGxpbWl0OiBJbnQsIG9mZnNldDogSW50LCBvcmRlcjogU3RyaW5nLCBzb3J0OiBTdHJpbmcpOiBbTGF1bmNoXQogIGxhdW5jaHBhZChpZDogSUQhKTogTGF1bmNocGFkCiAgbGF1bmNocGFkcyhsaW1pdDogSW50LCBvZmZzZXQ6IEludCk6IFtMYXVuY2hwYWRdCiAgbWlzc2lvbihpZDogSUQhKTogTWlzc2lvbiBAZGVwcmVjYXRlZChyZWFzb246ICJNaXNzaW9uIGlzIG5vdCBhdmFpbGFibGUgb24gUkVTVCBBUEkgYWZ0ZXIgTW9uZ29EQiBkZXByZWNhdGlvbiIpCiAgbWlzc2lvbnMoZmluZDogTWlzc2lvbnNGaW5kLCBsaW1pdDogSW50LCBvZmZzZXQ6IEludCk6IFtNaXNzaW9uXSBAZGVwcmVjYXRlZChyZWFzb246ICJNaXNzaW9uIGlzIG5vdCBhdmFpbGFibGUgb24gUkVTVCBBUEkgYWZ0ZXIgTW9uZ29EQiBkZXByZWNhdGlvbiIpCiAgbWlzc2lvbnNSZXN1bHQoZmluZDogTWlzc2lvbnNGaW5kLCBsaW1pdDogSW50LCBvZmZzZXQ6IEludCk6IE1pc3Npb25SZXN1bHQgQGRlcHJlY2F0ZWQocmVhc29uOiAiTWlzc2lvbiBpcyBub3QgYXZhaWxhYmxlIG9uIFJFU1QgQVBJIGFmdGVyIE1vbmdvREIgZGVwcmVjYXRpb24iKQogIHBheWxvYWQoaWQ6IElEISk6IFBheWxvYWQKICBwYXlsb2FkcyhmaW5kOiBQYXlsb2Fkc0ZpbmQsIGxpbWl0OiBJbnQsIG9mZnNldDogSW50LCBvcmRlcjogU3RyaW5nLCBzb3J0OiBTdHJpbmcpOiBbUGF5bG9hZF0KICByb2Fkc3RlcjogUm9hZHN0ZXIKICByb2NrZXQoaWQ6IElEISk6IFJvY2tldAogIHJvY2tldHMobGltaXQ6IEludCwgb2Zmc2V0OiBJbnQpOiBbUm9ja2V0XQogIHJvY2tldHNSZXN1bHQobGltaXQ6IEludCwgb2Zmc2V0OiBJbnQpOiBSb2NrZXRzUmVzdWx0CiAgc2hpcChpZDogSUQhKTogU2hpcAogIHNoaXBzKGZpbmQ6IFNoaXBzRmluZCwgbGltaXQ6IEludCwgb2Zmc2V0OiBJbnQsIG9yZGVyOiBTdHJpbmcsIHNvcnQ6IFN0cmluZyk6IFtTaGlwXQogIHNoaXBzUmVzdWx0KGZpbmQ6IFNoaXBzRmluZCwgbGltaXQ6IEludCwgb2Zmc2V0OiBJbnQsIG9yZGVyOiBTdHJpbmcsIHNvcnQ6IFN0cmluZyk6IFNoaXBzUmVzdWx0CgogICIiIgogIGZldGNoIGRhdGEgZnJvbSB0aGUgdGFibGU6ICJ1c2VycyIKICAiIiIKICB1c2VycygKICAgICIiImRpc3RpbmN0IHNlbGVjdCBvbiBjb2x1bW5zIiIiCiAgICBkaXN0aW5jdF9vbjogW3VzZXJzX3NlbGVjdF9jb2x1bW4hXQoKICAgICIiImxpbWl0IHRoZSBudWJlciBvZiByb3dzIHJldHVybmVkIiIiCiAgICBsaW1pdDogSW50CgogICAgIiIic2tpcCB0aGUgZmlyc3QgbiByb3dzLiBVc2Ugb25seSB3aXRoIG9yZGVyX2J5IiIiCiAgICBvZmZzZXQ6IEludAoKICAgICIiInNvcnQgdGhlIHJvd3MgYnkgb25lIG9yIG1vcmUgY29sdW1ucyIiIgogICAgb3JkZXJfYnk6IFt1c2Vyc19vcmRlcl9ieSFdCgogICAgIiIiZmlsdGVyIHRoZSByb3dzIHJldHVybmVkIiIiCiAgICB3aGVyZTogdXNlcnNfYm9vbF9leHAKICApOiBbdXNlcnMhXSEKCiAgIiIiCiAgZmV0Y2ggYWdncmVnYXRlZCBmaWVsZHMgZnJvbSB0aGUgdGFibGU6ICJ1c2VycyIKICAiIiIKICB1c2Vyc19hZ2dyZWdhdGUoCiAgICAiIiJkaXN0aW5jdCBzZWxlY3Qgb24gY29sdW1ucyIiIgogICAgZGlzdGluY3Rfb246IFt1c2Vyc19zZWxlY3RfY29sdW1uIV0KCiAgICAiIiJsaW1pdCB0aGUgbnViZXIgb2Ygcm93cyByZXR1cm5lZCIiIgogICAgbGltaXQ6IEludAoKICAgICIiInNraXAgdGhlIGZpcnN0IG4gcm93cy4gVXNlIG9ubHkgd2l0aCBvcmRlcl9ieSIiIgogICAgb2Zmc2V0OiBJbnQKCiAgICAiIiJzb3J0IHRoZSByb3dzIGJ5IG9uZSBvciBtb3JlIGNvbHVtbnMiIiIKICAgIG9yZGVyX2J5OiBbdXNlcnNfb3JkZXJfYnkhXQoKICAgICIiImZpbHRlciB0aGUgcm93cyByZXR1cm5lZCIiIgogICAgd2hlcmU6IHVzZXJzX2Jvb2xfZXhwCiAgKTogdXNlcnNfYWdncmVnYXRlIQoKICAiIiJmZXRjaCBkYXRhIGZyb20gdGhlIHRhYmxlOiAidXNlcnMiIHVzaW5nIHByaW1hcnkga2V5IGNvbHVtbnMiIiIKICB1c2Vyc19ieV9wayhpZDogdXVpZCEpOiB1c2VycwogIF9zZXJ2aWNlOiBfU2VydmljZSEKfQoKdHlwZSBSZXN1bHQgewogIHRvdGFsQ291bnQ6IEludAp9Cgp0eXBlIFJvYWRzdGVyIHsKICBhcG9hcHNpc19hdTogRmxvYXQKICBkZXRhaWxzOiBTdHJpbmcKICBlYXJ0aF9kaXN0YW5jZV9rbTogRmxvYXQKICBlYXJ0aF9kaXN0YW5jZV9taTogRmxvYXQKICBlY2NlbnRyaWNpdHk6IEZsb2F0CiAgZXBvY2hfamQ6IEZsb2F0CiAgaW5jbGluYXRpb246IEZsb2F0CiAgbGF1bmNoX2RhdGVfdW5peDogRGF0ZQogIGxhdW5jaF9kYXRlX3V0YzogRGF0ZQogIGxhdW5jaF9tYXNzX2tnOiBJbnQKICBsYXVuY2hfbWFzc19sYnM6IEludAogIGxvbmdpdHVkZTogRmxvYXQKICBtYXJzX2Rpc3RhbmNlX2ttOiBGbG9hdAogIG1hcnNfZGlzdGFuY2VfbWk6IEZsb2F0CiAgbmFtZTogU3RyaW5nCiAgbm9yYWRfaWQ6IEludAogIG9yYml0X3R5cGU6IEZsb2F0CiAgcGVyaWFwc2lzX2FyZzogRmxvYXQKICBwZXJpYXBzaXNfYXU6IEZsb2F0CiAgcGVyaW9kX2RheXM6IEZsb2F0CiAgc2VtaV9tYWpvcl9heGlzX2F1OiBGbG9hdAogIHNwZWVkX2twaDogRmxvYXQKICBzcGVlZF9tcGg6IEZsb2F0CiAgd2lraXBlZGlhOiBTdHJpbmcKfQoKdHlwZSBSb2NrZXQgewogIGFjdGl2ZTogQm9vbGVhbgogIGJvb3N0ZXJzOiBJbnQKICBjb21wYW55OiBTdHJpbmcKICBjb3N0X3Blcl9sYXVuY2g6IEludAogIGNvdW50cnk6IFN0cmluZwogIGRlc2NyaXB0aW9uOiBTdHJpbmcKICBkaWFtZXRlcjogRGlzdGFuY2UKICBlbmdpbmVzOiBSb2NrZXRFbmdpbmVzCiAgZmlyc3RfZmxpZ2h0OiBEYXRlCiAgZmlyc3Rfc3RhZ2U6IFJvY2tldEZpcnN0U3RhZ2UKICBoZWlnaHQ6IERpc3RhbmNlCiAgaWQ6IElECiAgbGFuZGluZ19sZWdzOiBSb2NrZXRMYW5kaW5nTGVncwogIG1hc3M6IE1hc3MKICBuYW1lOiBTdHJpbmcKICBwYXlsb2FkX3dlaWdodHM6IFtSb2NrZXRQYXlsb2FkV2VpZ2h0XQogIHNlY29uZF9zdGFnZTogUm9ja2V0U2Vjb25kU3RhZ2UKICBzdGFnZXM6IEludAogIHN1Y2Nlc3NfcmF0ZV9wY3Q6IEludAogIHR5cGU6IFN0cmluZwogIHdpa2lwZWRpYTogU3RyaW5nCn0KCnR5cGUgUm9ja2V0RW5naW5lcyB7CiAgZW5naW5lX2xvc3NfbWF4OiBTdHJpbmcKICBsYXlvdXQ6IFN0cmluZwogIG51bWJlcjogSW50CiAgcHJvcGVsbGFudF8xOiBTdHJpbmcKICBwcm9wZWxsYW50XzI6IFN0cmluZwogIHRocnVzdF9zZWFfbGV2ZWw6IEZvcmNlCiAgdGhydXN0X3RvX3dlaWdodDogRmxvYXQKICB0aHJ1c3RfdmFjdXVtOiBGb3JjZQogIHR5cGU6IFN0cmluZwogIHZlcnNpb246IFN0cmluZwp9Cgp0eXBlIFJvY2tldEZpcnN0U3RhZ2UgewogIGJ1cm5fdGltZV9zZWM6IEludAogIGVuZ2luZXM6IEludAogIGZ1ZWxfYW1vdW50X3RvbnM6IEZsb2F0CiAgcmV1c2FibGU6IEJvb2xlYW4KICB0aHJ1c3Rfc2VhX2xldmVsOiBGb3JjZQogIHRocnVzdF92YWN1dW06IEZvcmNlCn0KCnR5cGUgUm9ja2V0TGFuZGluZ0xlZ3MgewogIG1hdGVyaWFsOiBTdHJpbmcKICBudW1iZXI6IEludAp9Cgp0eXBlIFJvY2tldFBheWxvYWRXZWlnaHQgewogIGlkOiBTdHJpbmcKICBrZzogSW50CiAgbGI6IEludAogIG5hbWU6IFN0cmluZwp9Cgp0eXBlIFJvY2tldFNlY29uZFN0YWdlIHsKICBidXJuX3RpbWVfc2VjOiBJbnQKICBlbmdpbmVzOiBJbnQKICBmdWVsX2Ftb3VudF90b25zOiBGbG9hdAogIHBheWxvYWRzOiBSb2NrZXRTZWNvbmRTdGFnZVBheWxvYWRzCiAgdGhydXN0OiBGb3JjZQp9Cgp0eXBlIFJvY2tldFNlY29uZFN0YWdlUGF5bG9hZENvbXBvc2l0ZUZhaXJpbmcgewogIGRpYW1ldGVyOiBEaXN0YW5jZQogIGhlaWdodDogRGlzdGFuY2UKfQoKdHlwZSBSb2NrZXRTZWNvbmRTdGFnZVBheWxvYWRzIHsKICBjb21wb3NpdGVfZmFpcmluZzogUm9ja2V0U2Vjb25kU3RhZ2VQYXlsb2FkQ29tcG9zaXRlRmFpcmluZwogIG9wdGlvbl8xOiBTdHJpbmcKfQoKdHlwZSBSb2NrZXRzUmVzdWx0IHsKICBkYXRhOiBbUm9ja2V0XQogIHJlc3VsdDogUmVzdWx0Cn0KCnR5cGUgU2hpcCB7CiAgYWJzOiBJbnQKICBhY3RpdmU6IEJvb2xlYW4KICBhdHRlbXB0ZWRfbGFuZGluZ3M6IEludAogIGNsYXNzOiBJbnQKICBjb3Vyc2VfZGVnOiBJbnQKICBob21lX3BvcnQ6IFN0cmluZwogIGlkOiBJRAogIGltYWdlOiBTdHJpbmcKICBpbW86IEludAogIG1pc3Npb25zOiBbU2hpcE1pc3Npb25dCiAgbW1zaTogSW50CiAgbW9kZWw6IFN0cmluZwogIG5hbWU6IFN0cmluZwogIHBvc2l0aW9uOiBTaGlwTG9jYXRpb24KICByb2xlczogW1N0cmluZ10KICBzcGVlZF9rbjogRmxvYXQKICBzdGF0dXM6IFN0cmluZwogIHN1Y2Nlc3NmdWxfbGFuZGluZ3M6IEludAogIHR5cGU6IFN0cmluZwogIHVybDogU3RyaW5nCiAgd2VpZ2h0X2tnOiBJbnQKICB3ZWlnaHRfbGJzOiBJbnQKICB5ZWFyX2J1aWx0OiBJbnQKfQoKdHlwZSBTaGlwTG9jYXRpb24gewogIGxhdGl0dWRlOiBGbG9hdAogIGxvbmdpdHVkZTogRmxvYXQKfQoKdHlwZSBTaGlwTWlzc2lvbiB7CiAgZmxpZ2h0OiBTdHJpbmcKICBuYW1lOiBTdHJpbmcKfQoKaW5wdXQgU2hpcHNGaW5kIHsKICBpZDogSUQKICBuYW1lOiBTdHJpbmcKICBtb2RlbDogU3RyaW5nCiAgdHlwZTogU3RyaW5nCiAgcm9sZTogU3RyaW5nCiAgYWN0aXZlOiBCb29sZWFuCiAgaW1vOiBJbnQKICBtbXNpOiBJbnQKICBhYnM6IEludAogIGNsYXNzOiBJbnQKICB3ZWlnaHRfbGJzOiBJbnQKICB3ZWlnaHRfa2c6IEludAogIHllYXJfYnVpbHQ6IEludAogIGhvbWVfcG9ydDogU3RyaW5nCiAgc3RhdHVzOiBTdHJpbmcKICBzcGVlZF9rbjogSW50CiAgY291cnNlX2RlZzogSW50CiAgbGF0aXR1ZGU6IEZsb2F0CiAgbG9uZ2l0dWRlOiBGbG9hdAogIHN1Y2Nlc3NmdWxfbGFuZGluZ3M6IEludAogIGF0dGVtcHRlZF9sYW5kaW5nczogSW50CiAgbWlzc2lvbjogU3RyaW5nCn0KCnR5cGUgU2hpcHNSZXN1bHQgewogIGRhdGE6IFtTaGlwXQogIHJlc3VsdDogUmVzdWx0Cn0KCiIiIgpleHByZXNzaW9uIHRvIGNvbXBhcmUgY29sdW1ucyBvZiB0eXBlIFN0cmluZy4gQWxsIGZpZWxkcyBhcmUgY29tYmluZWQgd2l0aCBsb2dpY2FsICdBTkQnLgoiIiIKaW5wdXQgU3RyaW5nX2NvbXBhcmlzb25fZXhwIHsKICBfZXE6IFN0cmluZwogIF9ndDogU3RyaW5nCiAgX2d0ZTogU3RyaW5nCiAgX2lsaWtlOiBTdHJpbmcKICBfaW46IFtTdHJpbmchXQogIF9pc19udWxsOiBCb29sZWFuCiAgX2xpa2U6IFN0cmluZwogIF9sdDogU3RyaW5nCiAgX2x0ZTogU3RyaW5nCiAgX25lcTogU3RyaW5nCiAgX25pbGlrZTogU3RyaW5nCiAgX25pbjogW1N0cmluZyFdCiAgX25saWtlOiBTdHJpbmcKICBfbnNpbWlsYXI6IFN0cmluZwogIF9zaW1pbGFyOiBTdHJpbmcKfQoKdHlwZSBTdWJzY3JpcHRpb24gewogICIiIgogIGZldGNoIGRhdGEgZnJvbSB0aGUgdGFibGU6ICJ1c2VycyIKICAiIiIKICB1c2VycygKICAgICIiImRpc3RpbmN0IHNlbGVjdCBvbiBjb2x1bW5zIiIiCiAgICBkaXN0aW5jdF9vbjogW3VzZXJzX3NlbGVjdF9jb2x1bW4hXQoKICAgICIiImxpbWl0IHRoZSBudWJlciBvZiByb3dzIHJldHVybmVkIiIiCiAgICBsaW1pdDogSW50CgogICAgIiIic2tpcCB0aGUgZmlyc3QgbiByb3dzLiBVc2Ugb25seSB3aXRoIG9yZGVyX2J5IiIiCiAgICBvZmZzZXQ6IEludAoKICAgICIiInNvcnQgdGhlIHJvd3MgYnkgb25lIG9yIG1vcmUgY29sdW1ucyIiIgogICAgb3JkZXJfYnk6IFt1c2Vyc19vcmRlcl9ieSFdCgogICAgIiIiZmlsdGVyIHRoZSByb3dzIHJldHVybmVkIiIiCiAgICB3aGVyZTogdXNlcnNfYm9vbF9leHAKICApOiBbdXNlcnMhXSEKCiAgIiIiCiAgZmV0Y2ggYWdncmVnYXRlZCBmaWVsZHMgZnJvbSB0aGUgdGFibGU6ICJ1c2VycyIKICAiIiIKICB1c2Vyc19hZ2dyZWdhdGUoCiAgICAiIiJkaXN0aW5jdCBzZWxlY3Qgb24gY29sdW1ucyIiIgogICAgZGlzdGluY3Rfb246IFt1c2Vyc19zZWxlY3RfY29sdW1uIV0KCiAgICAiIiJsaW1pdCB0aGUgbnViZXIgb2Ygcm93cyByZXR1cm5lZCIiIgogICAgbGltaXQ6IEludAoKICAgICIiInNraXAgdGhlIGZpcnN0IG4gcm93cy4gVXNlIG9ubHkgd2l0aCBvcmRlcl9ieSIiIgogICAgb2Zmc2V0OiBJbnQKCiAgICAiIiJzb3J0IHRoZSByb3dzIGJ5IG9uZSBvciBtb3JlIGNvbHVtbnMiIiIKICAgIG9yZGVyX2J5OiBbdXNlcnNfb3JkZXJfYnkhXQoKICAgICIiImZpbHRlciB0aGUgcm93cyByZXR1cm5lZCIiIgogICAgd2hlcmU6IHVzZXJzX2Jvb2xfZXhwCiAgKTogdXNlcnNfYWdncmVnYXRlIQoKICAiIiJmZXRjaCBkYXRhIGZyb20gdGhlIHRhYmxlOiAidXNlcnMiIHVzaW5nIHByaW1hcnkga2V5IGNvbHVtbnMiIiIKICB1c2Vyc19ieV9wayhpZDogdXVpZCEpOiB1c2Vycwp9Cgp0eXBlIFZvbHVtZSB7CiAgY3ViaWNfZmVldDogSW50CiAgY3ViaWNfbWV0ZXJzOiBJbnQKfQoKIiIiY29uZmxpY3QgYWN0aW9uIiIiCmVudW0gY29uZmxpY3RfYWN0aW9uIHsKICAiIiJpZ25vcmUgdGhlIGluc2VydCBvbiB0aGlzIHJvdyIiIgogIGlnbm9yZQoKICAiIiJ1cGRhdGUgdGhlIHJvdyB3aXRoIHRoZSBnaXZlbiB2YWx1ZXMiIiIKICB1cGRhdGUKfQoKIiIiY29sdW1uIG9yZGVyaW5nIG9wdGlvbnMiIiIKZW51bSBvcmRlcl9ieSB7CiAgIiIiaW4gdGhlIGFzY2VuZGluZyBvcmRlciwgbnVsbHMgbGFzdCIiIgogIGFzYwoKICAiIiJpbiB0aGUgYXNjZW5kaW5nIG9yZGVyLCBudWxscyBmaXJzdCIiIgogIGFzY19udWxsc19maXJzdAoKICAiIiJpbiB0aGUgYXNjZW5kaW5nIG9yZGVyLCBudWxscyBsYXN0IiIiCiAgYXNjX251bGxzX2xhc3QKCiAgIiIiaW4gdGhlIGRlc2NlbmRpbmcgb3JkZXIsIG51bGxzIGZpcnN0IiIiCiAgZGVzYwoKICAiIiJpbiB0aGUgZGVzY2VuZGluZyBvcmRlciwgbnVsbHMgZmlyc3QiIiIKICBkZXNjX251bGxzX2ZpcnN0CgogICIiImluIHRoZSBkZXNjZW5kaW5nIG9yZGVyLCBudWxscyBsYXN0IiIiCiAgZGVzY19udWxsc19sYXN0Cn0KCnNjYWxhciB0aW1lc3RhbXB0egoKIiIiCmV4cHJlc3Npb24gdG8gY29tcGFyZSBjb2x1bW5zIG9mIHR5cGUgdGltZXN0YW1wdHouIEFsbCBmaWVsZHMgYXJlIGNvbWJpbmVkIHdpdGggbG9naWNhbCAnQU5EJy4KIiIiCmlucHV0IHRpbWVzdGFtcHR6X2NvbXBhcmlzb25fZXhwIHsKICBfZXE6IHRpbWVzdGFtcHR6CiAgX2d0OiB0aW1lc3RhbXB0egogIF9ndGU6IHRpbWVzdGFtcHR6CiAgX2luOiBbdGltZXN0YW1wdHohXQogIF9pc19udWxsOiBCb29sZWFuCiAgX2x0OiB0aW1lc3RhbXB0egogIF9sdGU6IHRpbWVzdGFtcHR6CiAgX25lcTogdGltZXN0YW1wdHoKICBfbmluOiBbdGltZXN0YW1wdHohXQp9CgoiIiIKY29sdW1ucyBhbmQgcmVsYXRpb25zaGlwcyBvZiAidXNlcnMiCiIiIgp0eXBlIHVzZXJzIHsKICBpZDogdXVpZCEKICBuYW1lOiBTdHJpbmcKICByb2NrZXQ6IFN0cmluZwogIHRpbWVzdGFtcDogdGltZXN0YW1wdHohCiAgdHdpdHRlcjogU3RyaW5nCn0KCiIiIgphZ2dyZWdhdGVkIHNlbGVjdGlvbiBvZiAidXNlcnMiCiIiIgp0eXBlIHVzZXJzX2FnZ3JlZ2F0ZSB7CiAgYWdncmVnYXRlOiB1c2Vyc19hZ2dyZWdhdGVfZmllbGRzCiAgbm9kZXM6IFt1c2VycyFdIQp9CgoiIiIKYWdncmVnYXRlIGZpZWxkcyBvZiAidXNlcnMiCiIiIgp0eXBlIHVzZXJzX2FnZ3JlZ2F0ZV9maWVsZHMgewogIGNvdW50KGNvbHVtbnM6IFt1c2Vyc19zZWxlY3RfY29sdW1uIV0sIGRpc3RpbmN0OiBCb29sZWFuKTogSW50CiAgbWF4OiB1c2Vyc19tYXhfZmllbGRzCiAgbWluOiB1c2Vyc19taW5fZmllbGRzCn0KCiIiIgpvcmRlciBieSBhZ2dyZWdhdGUgdmFsdWVzIG9mIHRhYmxlICJ1c2VycyIKIiIiCmlucHV0IHVzZXJzX2FnZ3JlZ2F0ZV9vcmRlcl9ieSB7CiAgY291bnQ6IG9yZGVyX2J5CiAgbWF4OiB1c2Vyc19tYXhfb3JkZXJfYnkKICBtaW46IHVzZXJzX21pbl9vcmRlcl9ieQp9CgoiIiIKaW5wdXQgdHlwZSBmb3IgaW5zZXJ0aW5nIGFycmF5IHJlbGF0aW9uIGZvciByZW1vdGUgdGFibGUgInVzZXJzIgoiIiIKaW5wdXQgdXNlcnNfYXJyX3JlbF9pbnNlcnRfaW5wdXQgewogIGRhdGE6IFt1c2Vyc19pbnNlcnRfaW5wdXQhXSEKICBvbl9jb25mbGljdDogdXNlcnNfb25fY29uZmxpY3QKfQoKIiIiCkJvb2xlYW4gZXhwcmVzc2lvbiB0byBmaWx0ZXIgcm93cyBmcm9tIHRoZSB0YWJsZSAidXNlcnMiLiBBbGwgZmllbGRzIGFyZSBjb21iaW5lZCB3aXRoIGEgbG9naWNhbCAnQU5EJy4KIiIiCmlucHV0IHVzZXJzX2Jvb2xfZXhwIHsKICBfYW5kOiBbdXNlcnNfYm9vbF9leHBdCiAgX25vdDogdXNlcnNfYm9vbF9leHAKICBfb3I6IFt1c2Vyc19ib29sX2V4cF0KICBpZDogdXVpZF9jb21wYXJpc29uX2V4cAogIG5hbWU6IFN0cmluZ19jb21wYXJpc29uX2V4cAogIHJvY2tldDogU3RyaW5nX2NvbXBhcmlzb25fZXhwCiAgdGltZXN0YW1wOiB0aW1lc3RhbXB0el9jb21wYXJpc29uX2V4cAogIHR3aXR0ZXI6IFN0cmluZ19jb21wYXJpc29uX2V4cAp9CgoiIiIKdW5pcXVlIG9yIHByaW1hcnkga2V5IGNvbnN0cmFpbnRzIG9uIHRhYmxlICJ1c2VycyIKIiIiCmVudW0gdXNlcnNfY29uc3RyYWludCB7CiAgdW5pcXVlCiAgb3IKICBwcmltYXJ5CiAga2V5CiAgY29uc3RyYWludAogIHVzZXJzX3BrZXkKfQoKIiIiCmlucHV0IHR5cGUgZm9yIGluc2VydGluZyBkYXRhIGludG8gdGFibGUgInVzZXJzIgoiIiIKaW5wdXQgdXNlcnNfaW5zZXJ0X2lucHV0IHsKICBpZDogdXVpZAogIG5hbWU6IFN0cmluZwogIHJvY2tldDogU3RyaW5nCiAgdGltZXN0YW1wOiB0aW1lc3RhbXB0egogIHR3aXR0ZXI6IFN0cmluZwp9CgoiIiJhZ2dyZWdhdGUgbWF4IG9uIGNvbHVtbnMiIiIKdHlwZSB1c2Vyc19tYXhfZmllbGRzIHsKICBuYW1lOiBTdHJpbmcKICByb2NrZXQ6IFN0cmluZwogIHRpbWVzdGFtcDogdGltZXN0YW1wdHoKICB0d2l0dGVyOiBTdHJpbmcKfQoKIiIiCm9yZGVyIGJ5IG1heCgpIG9uIGNvbHVtbnMgb2YgdGFibGUgInVzZXJzIgoiIiIKaW5wdXQgdXNlcnNfbWF4X29yZGVyX2J5IHsKICBuYW1lOiBvcmRlcl9ieQogIHJvY2tldDogb3JkZXJfYnkKICB0aW1lc3RhbXA6IG9yZGVyX2J5CiAgdHdpdHRlcjogb3JkZXJfYnkKfQoKIiIiYWdncmVnYXRlIG1pbiBvbiBjb2x1bW5zIiIiCnR5cGUgdXNlcnNfbWluX2ZpZWxkcyB7CiAgbmFtZTogU3RyaW5nCiAgcm9ja2V0OiBTdHJpbmcKICB0aW1lc3RhbXA6IHRpbWVzdGFtcHR6CiAgdHdpdHRlcjogU3RyaW5nCn0KCiIiIgpvcmRlciBieSBtaW4oKSBvbiBjb2x1bW5zIG9mIHRhYmxlICJ1c2VycyIKIiIiCmlucHV0IHVzZXJzX21pbl9vcmRlcl9ieSB7CiAgbmFtZTogb3JkZXJfYnkKICByb2NrZXQ6IG9yZGVyX2J5CiAgdGltZXN0YW1wOiBvcmRlcl9ieQogIHR3aXR0ZXI6IG9yZGVyX2J5Cn0KCiIiIgpyZXNwb25zZSBvZiBhbnkgbXV0YXRpb24gb24gdGhlIHRhYmxlICJ1c2VycyIKIiIiCnR5cGUgdXNlcnNfbXV0YXRpb25fcmVzcG9uc2UgewogICIiIm51bWJlciBvZiBhZmZlY3RlZCByb3dzIGJ5IHRoZSBtdXRhdGlvbiIiIgogIGFmZmVjdGVkX3Jvd3M6IEludCEKCiAgIiIiZGF0YSBvZiB0aGUgYWZmZWN0ZWQgcm93cyBieSB0aGUgbXV0YXRpb24iIiIKICByZXR1cm5pbmc6IFt1c2VycyFdIQp9CgoiIiIKaW5wdXQgdHlwZSBmb3IgaW5zZXJ0aW5nIG9iamVjdCByZWxhdGlvbiBmb3IgcmVtb3RlIHRhYmxlICJ1c2VycyIKIiIiCmlucHV0IHVzZXJzX29ial9yZWxfaW5zZXJ0X2lucHV0IHsKICBkYXRhOiB1c2Vyc19pbnNlcnRfaW5wdXQhCiAgb25fY29uZmxpY3Q6IHVzZXJzX29uX2NvbmZsaWN0Cn0KCiIiIgpvbiBjb25mbGljdCBjb25kaXRpb24gdHlwZSBmb3IgdGFibGUgInVzZXJzIgoiIiIKaW5wdXQgdXNlcnNfb25fY29uZmxpY3QgewogIGNvbnN0cmFpbnQ6IHVzZXJzX2NvbnN0cmFpbnQhCiAgdXBkYXRlX2NvbHVtbnM6IFt1c2Vyc191cGRhdGVfY29sdW1uIV0hCn0KCiIiIgpvcmRlcmluZyBvcHRpb25zIHdoZW4gc2VsZWN0aW5nIGRhdGEgZnJvbSAidXNlcnMiCiIiIgppbnB1dCB1c2Vyc19vcmRlcl9ieSB7CiAgaWQ6IG9yZGVyX2J5CiAgbmFtZTogb3JkZXJfYnkKICByb2NrZXQ6IG9yZGVyX2J5CiAgdGltZXN0YW1wOiBvcmRlcl9ieQogIHR3aXR0ZXI6IG9yZGVyX2J5Cn0KCiIiIgpzZWxlY3QgY29sdW1ucyBvZiB0YWJsZSAidXNlcnMiCiIiIgplbnVtIHVzZXJzX3NlbGVjdF9jb2x1bW4gewogIGNvbHVtbgogIG5hbWUKICBpZAogIHJvY2tldAogIHRpbWVzdGFtcAogIHR3aXR0ZXIKfQoKIiIiCmlucHV0IHR5cGUgZm9yIHVwZGF0aW5nIGRhdGEgaW4gdGFibGUgInVzZXJzIgoiIiIKaW5wdXQgdXNlcnNfc2V0X2lucHV0IHsKICBpZDogdXVpZAogIG5hbWU6IFN0cmluZwogIHJvY2tldDogU3RyaW5nCiAgdGltZXN0YW1wOiB0aW1lc3RhbXB0egogIHR3aXR0ZXI6IFN0cmluZwp9CgoiIiIKdXBkYXRlIGNvbHVtbnMgb2YgdGFibGUgInVzZXJzIgoiIiIKZW51bSB1c2Vyc191cGRhdGVfY29sdW1uIHsKICBjb2x1bW4KICBuYW1lCiAgaWQKICByb2NrZXQKICB0aW1lc3RhbXAKICB0d2l0dGVyCn0KCnNjYWxhciB1dWlkCgoiIiIKZXhwcmVzc2lvbiB0byBjb21wYXJlIGNvbHVtbnMgb2YgdHlwZSB1dWlkLiBBbGwgZmllbGRzIGFyZSBjb21iaW5lZCB3aXRoIGxvZ2ljYWwgJ0FORCcuCiIiIgppbnB1dCB1dWlkX2NvbXBhcmlzb25fZXhwIHsKICBfZXE6IHV1aWQKICBfZ3Q6IHV1aWQKICBfZ3RlOiB1dWlkCiAgX2luOiBbdXVpZCFdCiAgX2lzX251bGw6IEJvb2xlYW4KICBfbHQ6IHV1aWQKICBfbHRlOiB1dWlkCiAgX25lcTogdXVpZAogIF9uaW46IFt1dWlkIV0KfQoKZW51bSBsaW5rX19QdXJwb3NlIHsKICAiIiIKICBgU0VDVVJJVFlgIGZlYXR1cmVzIHByb3ZpZGUgbWV0YWRhdGEgbmVjZXNzYXJ5IHRvIHNlY3VyZWx5IHJlc29sdmUgZmllbGRzLgogICIiIgogIFNFQ1VSSVRZCgogICIiIgogIGBFWEVDVVRJT05gIGZlYXR1cmVzIHByb3ZpZGUgbWV0YWRhdGEgbmVjZXNzYXJ5IGZvciBvcGVyYXRpb24gZXhlY3V0aW9uLgogICIiIgogIEVYRUNVVElPTgp9CgpzY2FsYXIgbGlua19fSW1wb3J0CgpzY2FsYXIgZmVkZXJhdGlvbl9fRmllbGRTZXQKCnNjYWxhciBfQW55Cgp0eXBlIF9TZXJ2aWNlIHsKICBzZGw6IFN0cmluZwp9Cg==
+paths:
+  /graphql:
+    post:
+      responses:
+        '200':
+          description: success
+          schema:
+            type: string
+      consumes:
+        - application/json
+        - application/graphql
+      produces:
+        - application/json
+      parameters:
+        - name: variables
+          in: query
+          required: false
+          type: string
+        - name: operationName
+          in: query
+          required: false
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: string
+    get:
+      responses:
+        '200':
+          description: success
+          schema:
+            type: string
+      consumes: []
+      produces:
+        - application/json
+        - text/html
+      parameters:
+        - name: variables
+          in: query
+          required: false
+          type: string
+        - name: operationName
+          in: query
+          required: false
+          type: string
+        - name: query
+          in: query
+          required: false
+          type: string
+    parameters: []
+  /graphql/cost:
+    post:
+      responses:
+        '200':
+          description: success
+          schema:
+            type: string
+      consumes:
+        - application/json
+        - application/graphql
+      produces:
+        - application/json
+      parameters:
+        - name: variables
+          in: query
+          required: false
+          type: string
+        - name: operationName
+          in: query
+          required: false
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: string
+    get:
+      responses:
+        '200':
+          description: success
+          schema:
+            type: string
+      consumes: []
+      produces:
+        - application/json
+        - text/html
+      parameters:
+        - name: variables
+          in: query
+          required: false
+          type: string
+        - name: operationName
+          in: query
+          required: false
+          type: string
+        - name: query
+          in: query
+          required: true
+          type: string
+    parameters: []
+securityDefinitions:
+  clientID:
+    type: apiKey
+    in: header
+    name: X-IBM-Client-Id
+security:
+  - clientID: []

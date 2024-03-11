@@ -1,0 +1,102 @@
+swagger: '2.0'
+info:
+  version: 1.0.0
+  title: RFICrit053JWTRRHSSO
+  x-ibm-name: rficrit053jwtrhsso
+basePath: /jwt
+x-ibm-configuration:
+  properties:
+    target-url:
+      value: https://pokeapi.co/api/v2/pokemon/ditto
+      description: URL of the proxy policy
+      encoded: false
+  cors:
+    enabled: true
+  gateway: datapower-api-gateway
+  type: rest
+  phase: realized
+  enforced: true
+  testable: true
+  assembly:
+    execute:
+      - invoke:
+          title: invoke
+          version: 2.0.0
+          verb: GET
+          target-url: $(target-url)
+          follow-redirects: false
+          timeout: 60
+          parameter-control:
+            type: allowlist
+            values: []
+          header-control:
+            type: blocklist
+            values: []
+          inject-proxy-headers: false
+          persistent-connection: true
+    finally: []
+    catch:
+      - errors:
+          - ConnectionError
+          - JavaScriptError
+          - PropertyError
+          - RedactionError
+          - TransformError
+          - RuntimeError
+          - BadRequestError
+          - SOAPError
+          - OperationError
+          - ValidateError
+          - AssemblyRateLimitError
+        execute:
+          - log:
+              version: 2.1.0
+              title: log
+              log-level: default
+              mode: gather-and-send
+  activity-log:
+    enabled: true
+    success-content: activity
+    error-content: payload
+paths:
+  /:
+    get:
+      responses:
+        '200':
+          description: success
+          schema:
+            type: string
+      consumes: []
+      produces: []
+      parameters:
+        - name: Authorization
+          required: true
+          in: header
+          type: string
+securityDefinitions:
+  clientId:
+    type: apiKey
+    in: header
+    name: X-IBM-Client-Id
+    x-key-type: client_id
+  jwt-validate:
+    type: oauth2
+    x-ibm-oauth-provider: jwt-keycloak
+    flow: application
+    scopes:
+      escopo-jwt: ''
+    tokenUrl: >-
+      https://keycloak-cp4i-apic.apps.rey.coc-ibm.com/realms/rfi/protocol/openid-connect/token
+  jwt-validate-casa:
+    type: oauth2
+    x-ibm-oauth-provider: jwt-keycloak-casa
+    flow: application
+    tokenUrl: >-
+      https://keycloak-api-sso.apps.daffy-jbc1aoil.cloud.techzone.ibm.com/auth/realms/do240/protocol/openid-connect/token
+    scopes:
+      sample_scope_1: Sample scope description 1
+schemes:
+  - https
+security:
+  - clientId: []
+    jwt-validate-casa: []

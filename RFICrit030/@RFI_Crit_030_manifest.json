@@ -1,0 +1,11 @@
+{
+"extension": {
+"properties": { "deploy-policy-emulator": true, "deploy-policies": [
+"xslt_1.0.0", "gatewayscript_1.0.0", "invoke_1.5.0", "proxy_1.5.0", "if_1.5.0", "switch_1.5.0", "redact_1.5.0", "activity-log_1.5.0"
+] },
+"files": [
+{
+"filename": "gatewayextension.zip", "deploy": "immediate",
+"type": "extension"
+} ]
+} }
